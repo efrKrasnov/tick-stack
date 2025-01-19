@@ -1,0 +1,121 @@
+services:
+  telegraf:
+    image: telegraf:1.33-alpine
+    command: -config /etc/telegraf/telegraf.conf
+    restart: always
+    container_name: telegraf
+    hostname: telegraf
+    volumes:
+      - ./TICK-1/telegraf-conf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      # Это volume мы используем для хранения информации о возникновении ошибки 500
+      - ./logs/nginx/codes.log:/var/log/nginx/codes.log:ro
+    depends_on:
+      - influxdb
+
+  influxdb:
+    image: influxdb:1.11.8-alpine
+    restart: always
+    container_name: influxdb
+    hostname: influxdb
+    ports: 
+      - 8086:8086
+    environment:
+      INFLUXDB_DB: monitoring
+      INFLUXDB_HTTP_AUTH_ENABLED: true
+      INFLUXDB_ADMIN_USER: admin
+      INFLUXDB_ADMIN_PASSWORD: adminpassword
+    volumes:
+      - ./TICK-1/influxdb-conf/influxdb.conf:/etc/influxdb/influxdb.conf:ro
+      - influxdb-data:/var/lib/influxdb:rw
+
+  chronograf:
+    image: chronograf:1.9.4-alpine
+    restart: always
+    container_name: chronograf
+    hostname: chronograf
+    ports:
+      - 8888:8888
+    environment:
+      INFLUXDB_URL: http://influxdb:8086
+      KAPACITOR_URL: http://kapacitor:9092
+      INFLUXDB_USERNAME: admin
+      INFLUXDB_PASSWORD: adminpassword
+    volumes:
+      - chronograf-data:/var/lib/chronograf:rw
+    depends_on:
+      - influxdb
+
+  kapacitor:
+    image: kapacitor:1.7.6-alpine
+    restart: always
+    container_name: kapacitor
+    hostname: kapacitor
+    ports:
+      - 9092:9092
+    environment:
+      KAPACITOR_HOSTNAME: kapacitor
+      KAPACITOR_INFLUXDB_0_URLS_0: "http://influxdb:8086"
+      KAPACITOR_INFLUXDB_ENABLED: "true"
+      KAPACITOR_HTTP_AUTH_ENABLED: "true"
+      KAPACITOR_INFLUXDB_0_USERNAME: admin
+      KAPACITOR_INFLUXDB_0_PASSWORD: adminpassword
+      KAPACITOR_AS_ROOT: "true"
+    volumes:
+      - ./TICK-1/kapacitor.conf:/etc/kapacitor/kapacitor.conf:ro
+      - kapacitor-data:/var/lib/kapacitor:rw
+    depends_on:
+      - influxdb
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    depends_on:
+      - wordpress
+    ports:
+      - 80:80
+    volumes:
+      - ./TICK-1/nginx:/etc/nginx/conf.d
+      - ./data/html:/var/www/html
+      - ./logs/nginx:/var/log/nginx
+      - /etc/localtime:/etc/localtime:ro
+
+  wordpress:
+    image: wordpress:php8.3-fpm-alpine
+    container_name: wordpress
+    restart: unless-stopped
+    volumes:
+      - ./data/html:/var/www/html
+      - ./TICK-1/php-fpm/www.conf:/usr/local/etc/php-fpm.d/www.conf
+    depends_on:
+      - db
+    environment:
+      WORDPRESS_DB_HOST: db:3307
+      WORDPRESS_DB_USER: ${MYSQL_USER}
+      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
+      WORDPRESS_DB_NAME: wordpress
+      
+  db:
+    image: mysql:5.7
+    container_name: db
+    restart: always
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    ports:
+      - 3306:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+
+volumes:
+  chronograf-data: {}
+  kapacitor-data: {}
+  influxdb-data: {}

@@ -1,0 +1,72 @@
+var db = 'monitoring'
+
+var rp = 'autogen'
+
+var measurement = 'tail'
+
+var groupBy = []
+
+var whereFilter = lambda: isPresent("code")
+
+var name = '500ые ошибки'
+
+var idVar = name
+
+var message = 'Возникли 500ые ошибки'
+
+var idTag = 'alertID'
+
+var levelTag = 'level'
+
+var messageField = 'message'
+
+var durationField = 'duration'
+
+var outputDB = 'chronograf'
+
+var outputRP = 'autogen'
+
+var outputMeasurement = 'alerts'
+
+var triggerType = 'threshold'
+
+var crit = 500
+
+var data = stream
+    |from()
+        .database(db)
+        .retentionPolicy(rp)
+        .measurement(measurement)
+        .groupBy(groupBy)
+        .where(whereFilter)
+    |eval(lambda: "code")
+        .as('value')
+
+var trigger = data
+    |alert()
+        .crit(lambda: "value" >= crit)
+        .message(message)
+        .id(idVar)
+        .idTag(idTag)
+        .levelTag(levelTag)
+        .messageField(messageField)
+        .durationField(durationField)
+        .stateChangesOnly()
+        .telegram()
+        .chatId('-4641918723')
+        .parseMode('Markdown')
+
+trigger
+    |eval(lambda: float("value"))
+        .as('value')
+        .keep()
+    |influxDBOut()
+        .create()
+        .database(outputDB)
+        .retentionPolicy(outputRP)
+        .measurement(outputMeasurement)
+        .tag('alertName', name)
+        .tag('triggerType', triggerType)
+
+trigger
+    |httpOut('output')
